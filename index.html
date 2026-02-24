@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maui Flow Ultra - 數據儀表盤</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #f0fdf4 0%, #fff7ed 100%); }
+        .glass-card { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.85); border: 1px solid white; }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen font-sans p-4 md:p-8 text-gray-800">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <section class="glass-card rounded-[32px] p-6 shadow-sm border-b-4 border-green-200">
+            <h2 class="text-xl font-black text-green-700 mb-2">🌺 毛伊習慣設計指南</h2>
+            <p class="text-sm text-gray-600 italic">"當我 [錨點] 時，我會做 [微行為]，然後 [慶祝]。"</p>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <div class="lg:col-span-4 space-y-6">
+                <div class="glass-card p-6 rounded-3xl shadow-xl">
+                    <h2 class="text-lg font-bold mb-4 text-green-700">✨ 設計新習慣</h2>
+                    <div class="space-y-3">
+                        <input id="anchor" type="text" placeholder="A: 當我(錨點)..." class="w-full p-3 rounded-xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-green-400">
+                        <input id="behavior" type="text" placeholder="B: 我要做(微行為)..." class="w-full p-3 rounded-xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-green-400">
+                        <input id="celebration" type="text" placeholder="C: 我要慶祝..." class="w-full p-3 rounded-xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-green-400">
+                        <div class="grid grid-cols-2 gap-3">
+                            <input id="reminderTime" type="time" class="w-full p-3 rounded-xl border-none ring-1 ring-gray-200 mt-1">
+                            <select id="soundSelect" class="w-full p-3 rounded-xl border-none ring-1 ring-gray-200 mt-1 text-sm">
+                                <option value="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3">✨ 魔法</option>
+                                <option value="https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3">🔔 風鈴</option>
+                            </select>
+                        </div>
+                        <button onclick="addHabit()" class="w-full bg-green-500 text-white font-bold py-4 rounded-2xl shadow-md mt-2">啟動習慣</button>
+                    </div>
+                </div>
+
+                <div class="glass-card p-6 rounded-3xl shadow-xl">
+                    <h2 class="text-lg font-bold mb-4 text-blue-600">📊 過去 7 天完成度</h2>
+                    <canvas id="weeklyChart"></canvas>
+                </div>
+            </div>
+
+            <div class="lg:col-span-5 space-y-4">
+                <h2 class="text-xl font-bold px-2">我的習慣清單</h2>
+                <div id="habitList" class="space-y-4"></div>
+            </div>
+
+            <div class="lg:col-span-3">
+                <div class="glass-card p-5 rounded-3xl shadow-lg h-full">
+                    <h2 class="text-lg font-bold mb-4 flex justify-between">
+                        <span>🏆 歷史足跡</span>
+                        <button onclick="clearLogs()" class="text-[10px] text-gray-300">清除</button>
+                    </h2>
+                    <div id="logList" class="space-y-2 max-h-[400px] overflow-y-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center p-6 z-50">
+        <div class="bg-white rounded-[40px] p-10 w-full max-w-sm text-center">
+            <div class="text-6xl mb-4">🌱</div>
+            <p id="modalAnchor" class="text-green-500 font-bold text-[10px] uppercase"></p>
+            <h3 id="modalBehavior" class="text-3xl font-black my-6 text-gray-800"></h3>
+            <button onclick="confirmCompletion()" class="w-full bg-green-500 text-white font-bold py-5 rounded-2xl text-xl shadow-xl">完成慶祝！</button>
+        </div>
+    </div>
+
+    <audio id="audioPlayer"></audio>
+
+    <script>
+        let habits = JSON.parse(localStorage.getItem('maui_v3_habits')) || [];
+        let logs = JSON.parse(localStorage.getItem('maui_v3_logs')) || [];
+        let activeId = null;
+        let chartInstance = null;
+
+        window.onload = () => {
+            if ("Notification" in window) Notification.requestPermission();
+            renderAll();
+            initChart();
+            setInterval(checkAndNotify, 30000);
+        };
+
+        // --- 圖表邏輯 ---
+        function initChart() {
+            const ctx = document.getElementById('weeklyChart').getContext('2d');
+            const data = getWeeklyStats();
+            
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: '完成次數',
+                        data: data.counts,
+                        backgroundColor: '#4ade80',
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function getWeeklyStats() {
+            const labels = [];
+            const counts = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dateStr = d.toLocaleDateString();
+                labels.push(d.toLocaleDateString(undefined, {weekday: 'short'}));
+                
+                // 計算當天 log 數量
+                const count = logs.filter(l => new Date(l.time).toLocaleDateString() === dateStr).length;
+                counts.push(count);
+            }
+            return { labels, counts };
+        }
+
+        function updateChart() {
+            const data = getWeeklyStats();
+            chartInstance.data.labels = data.labels;
+            chartInstance.data.datasets[0].data = data.counts;
+            chartInstance.update();
+        }
+
+        // --- 核心習慣邏輯 ---
+        function addHabit() {
+            const a = document.getElementById('anchor').value;
+            const b = document.getElementById('behavior').value;
+            const t = document.getElementById('reminderTime').value;
+            if(!a || !b || !t) return alert("請完整輸入！");
+
+            habits.push({
+                id: Date.now(), anchor: a, behavior: b, 
+                celebration: document.getElementById('celebration').value,
+                sound: document.getElementById('soundSelect').value,
+                time: t, streak: 0, lastDate: null, lastNotifiedDate: null
+            });
+            saveAndRender();
+        }
+
+        function checkAndNotify() {
+            const now = new Date();
+            const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            habits.forEach(h => {
+                if (h.time === currentTime && h.lastNotifiedDate !== now.toDateString()) {
+                    h.lastNotifiedDate = now.toDateString();
+                    saveData();
+                    if (Notification.permission === "granted") new Notification("🌺 毛伊時刻！", { body: h.behavior });
+                    triggerHabit(h.id);
+                }
+            });
+        }
+
+        function confirmCompletion() {
+            const today = new Date().toDateString();
+            const habit = habits.find(x => x.id === activeId);
+            
+            if (habit.lastDate !== today) {
+                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+                habit.streak = (habit.lastDate === yesterday.toDateString()) ? habit.streak + 1 : 1;
+                habit.lastDate = today;
+                logs.unshift({ behavior: habit.behavior, time: new Date().toISOString() });
+            }
+
+            confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+            saveAndRender();
+            updateChart(); // 更新圖表
+            setTimeout(() => document.getElementById('modal').classList.replace('flex', 'hidden'), 800);
+        }
+
+        function renderAll() {
+            const today = new Date().toDateString();
+            document.getElementById('habitList').innerHTML = habits.map(h => `
+                <div class="glass-card p-5 rounded-3xl shadow-sm border-l-8 ${h.lastDate === today ? 'border-green-400' : 'border-orange-300'} flex items-center justify-between cursor-pointer" onclick="triggerHabit(${h.id})">
+                    <div class="flex-1">
+                        <span class="text-[9px] font-bold px-2 py-0.5 bg-gray-100 rounded-full text-gray-400">⏰ ${h.time}</span>
+                        <h3 class="text-lg font-bold text-gray-700">${h.behavior}</h3>
+                    </div>
+                    ${h.streak > 0 ? `<span class="text-orange-500 font-bold">🔥 ${h.streak}</span>` : ''}
+                </div>
+            `).join('');
+
+            document.getElementById('logList').innerHTML = logs.map(l => `
+                <div class="bg-white/40 p-2 rounded-xl border border-white/60 text-[10px] mb-2">
+                    <b>✅ ${l.behavior}</b><br>${new Date(l.time).toLocaleString()}
+                </div>
+            `).join('');
+        }
+
+        function triggerHabit(id) {
+            const h = habits.find(x => x.id === id);
+            activeId = id;
+            document.getElementById('audioPlayer').src = h.sound;
+            document.getElementById('audioPlayer').play();
+            document.getElementById('modalAnchor').innerText = h.anchor;
+            document.getElementById('modalBehavior').innerText = h.behavior;
+            document.getElementById('modal').classList.replace('hidden', 'flex');
+        }
+
+        function saveData() {
+            localStorage.setItem('maui_v3_habits', JSON.stringify(habits));
+            localStorage.setItem('maui_v3_logs', JSON.stringify(logs));
+        }
+
+        function saveAndRender() { saveData(); renderAll(); }
+        function clearLogs() { logs = []; saveAndRender(); updateChart(); }
+    </script>
+</body>
+</html>

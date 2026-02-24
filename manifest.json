@@ -1,0 +1,17 @@
+{
+  name Maui Flow Ultra,
+  short_name MauiFlow,
+  description 基於行為科學的微習慣養成工具,
+  start_url index.html,
+  display standalone,
+  background_color #f0fdf4,
+  theme_color #22c55e,
+  icons [
+    {
+      src httpscdn-icons-png.flaticon.com51211641164620.png,
+      sizes 512x512,
+      type imagepng,
+      purpose any maskable
+    }
+  ]
+}
